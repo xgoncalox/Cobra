@@ -9,6 +9,6 @@ package com.facerecog.app
  * NOT the "service_role" key - never put the service_role key in an app).
  */
 object SupabaseConfig {
-    const val SUPABASE_URL = "https://YOUR-PROJECT-ID.supabase.co"
-    const val SUPABASE_ANON_KEY = "YOUR-ANON-PUBLIC-KEY"
+    const val SUPABASE_URL = "https://jcjfirlidbhkekndiglj.supabase.co"
+    const val SUPABASE_ANON_KEY = "sb_publishable_VKF-dH-6O9mnY1rl-U4ZUQ_lmMOLbJl"
 }
