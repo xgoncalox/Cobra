@@ -1,6 +1,5 @@
 package com.facerecog.app
 
-import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.widget.EditText
 import android.widget.Toast
@@ -16,8 +15,8 @@ import kotlinx.coroutines.launch
 class PersonDetailActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityPersonDetailBinding
-    private lateinit var db: AppDatabase
-    private var personId: Long = -1
+    private val repo = FirebaseRepository.getInstance()
+    private var personId: String = ""
     private lateinit var faceAdapter: FaceThumbAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -25,16 +24,105 @@ class PersonDetailActivity : AppCompatActivity() {
         binding = ActivityPersonDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        personId = intent.getLongExtra("personId", -1)
+        personId = intent.getStringExtra("personId") ?: ""
         val personName = intent.getStringExtra("personName") ?: "Person"
         supportActionBar?.title = personName
         binding.tvPersonName.text = personName
 
-        db = AppDatabase.getInstance(this)
-
         faceAdapter = FaceThumbAdapter { embedding ->
             AlertDialog.Builder(this)
                 .setTitle("Remove this photo?")
+                .setPositiveButton("Remove") { _, _ ->
+                    lifecycleScope.launch {
+                        repo.deleteEmbedding(embedding.id)
+                        loadFaces()
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+        binding.recyclerFaces.layoutManager = GridLayoutManager(this, 3)
+        binding.recyclerFaces.adapter = faceAdapter
+
+        binding.btnRename.setOnClickListener { showRenameDialog(personName) }
+        binding.btnDeletePerson.setOnClickListener { deletePerson() }
+
+        loadFaces()
+    }
+
+    private fun loadFaces() {
+        lifecycleScope.launch {
+            val faces = repo.getEmbeddingsForPerson(personId)
+            faceAdapter.submitList(faces)
+            binding.tvCount.text = "${faces.size} saved photo(s)"
+        }
+    }
+
+    private fun showRenameDialog(currentName: String) {
+        val input = EditText(this)
+        input.setText(currentName)
+        AlertDialog.Builder(this)
+            .setTitle("Rename person")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val newName = input.text.toString().trim()
+                if (newName.isNotEmpty()) {
+                    lifecycleScope.launch {
+                        repo.updatePersonName(personId, newName)
+                        supportActionBar?.title = newName
+                        binding.tvPersonName.text = newName
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun deletePerson() {
+        AlertDialog.Builder(this)
+            .setTitle("Delete this person?")
+            .setMessage("This removes all their saved face data for everyone using the app.")
+            .setPositiveButton("Delete") { _, _ ->
+                lifecycleScope.launch {
+                    repo.deletePerson(personId)
+                    Toast.makeText(this@PersonDetailActivity, "Deleted", Toast.LENGTH_SHORT).show()
+                    finish()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+}
+
+class FaceThumbAdapter(
+    private val onLongPressDelete: (FaceEmbeddingEntity) -> Unit
+) : androidx.recyclerview.widget.ListAdapter<FaceEmbeddingEntity, FaceThumbAdapter.VH>(
+    object : androidx.recyclerview.widget.DiffUtil.ItemCallback<FaceEmbeddingEntity>() {
+        override fun areItemsTheSame(a: FaceEmbeddingEntity, b: FaceEmbeddingEntity) = a.id == b.id
+        override fun areContentsTheSame(a: FaceEmbeddingEntity, b: FaceEmbeddingEntity) = a == b
+    }
+) {
+    inner class VH(val binding: ItemFaceThumbBinding) :
+        androidx.recyclerview.widget.RecyclerView.ViewHolder(binding.root)
+
+    override fun onCreateViewHolder(parent: android.view.ViewGroup, viewType: Int): VH {
+        val binding = ItemFaceThumbBinding.inflate(
+            android.view.LayoutInflater.from(parent.context), parent, false
+        )
+        return VH(binding)
+    }
+
+    override fun onBindViewHolder(holder: VH, position: Int) {
+        val item = getItem(position)
+        if (!item.imageUrl.isNullOrEmpty()) {
+            Glide.with(holder.itemView).load(item.imageUrl).into(holder.binding.imgFace)
+        }
+        holder.binding.root.setOnLongClickListener {
+            onLongPressDelete(item)
+            true
+        }
+    }
+}                .setTitle("Remove this photo?")
                 .setPositiveButton("Remove") { _, _ ->
                     lifecycleScope.launch {
                         db.personDao().deleteEmbedding(embedding)
