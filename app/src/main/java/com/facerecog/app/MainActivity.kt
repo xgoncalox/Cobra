@@ -27,7 +27,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var embedder: FaceEmbedder
     private lateinit var matcher: FaceMatcher
-    private val repo = FirebaseRepository.getInstance()
+    private val repo = SupabaseRepository.getInstance()
 
     private var lastUnknownBitmap: Bitmap? = null
     private var isProcessing = false
@@ -56,7 +56,6 @@ class MainActivity : AppCompatActivity() {
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         lifecycleScope.launch {
-            repo.ensureSignedIn()
             matcher.refreshCache()
         }
 
@@ -275,30 +274,6 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this@MainActivity, "Upload failed: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        cameraExecutor.shutdown()
-        embedder.close()
-    }
-}        val embedding = embedder.getEmbedding(bitmap)
-            db.personDao().insertEmbedding(
-                FaceEmbeddingEntity(personId = personId, vector = embedding, imagePath = path)
-            )
-            matcher.refreshCache()
-            Toast.makeText(this@MainActivity, "Saved", Toast.LENGTH_SHORT).show()
-            binding.btnAssignUnknown.visibility = android.view.View.GONE
-        }
-    }
-
-    private fun saveBitmapToDisk(bitmap: Bitmap, prefix: String): String {
-        val dir = File(filesDir, "faces").apply { mkdirs() }
-        val file = File(dir, "${prefix}_${System.currentTimeMillis()}.jpg")
-        FileOutputStream(file).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
-        }
-        return file.absolutePath
     }
 
     override fun onDestroy() {
