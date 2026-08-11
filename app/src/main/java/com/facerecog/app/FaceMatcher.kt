@@ -3,11 +3,11 @@ package com.facerecog.app
 data class MatchResult(val personId: String?, val personName: String, val score: Float)
 
 /**
- * Keeps all known embeddings (fetched from the shared Firebase database) in memory
+ * Keeps all known embeddings (fetched from the shared Supabase database) in memory
  * for fast linear-scan matching. Call refreshCache() after adding/removing people
  * or periodically to pick up faces added by other devices.
  */
-class FaceMatcher(private val repo: FirebaseRepository) {
+class FaceMatcher(private val repo: SupabaseRepository) {
 
     private var cache: List<Triple<String, String, FloatArray>> = emptyList()
 
@@ -37,10 +37,6 @@ class FaceMatcher(private val repo: FirebaseRepository) {
         return if (bestScore >= FaceEmbedder.MATCH_THRESHOLD) {
             MatchResult(bestId, bestName, bestScore)
         } else {
-            MatchResult(null, "Unknown", bestScore)
-        }
-    }
-}        } else {
             MatchResult(null, "Unknown", bestScore)
         }
     }
