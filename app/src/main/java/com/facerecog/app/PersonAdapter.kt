@@ -23,8 +23,8 @@ class PersonAdapter(
     override fun onBindViewHolder(holder: VH, position: Int) {
         val person = getItem(position)
         holder.binding.tvName.text = person.name
-        if (!person.thumbnailPath.isNullOrEmpty()) {
-            Glide.with(holder.itemView).load(person.thumbnailPath).circleCrop()
+        if (!person.thumbnailUrl.isNullOrEmpty()) {
+            Glide.with(holder.itemView).load(person.thumbnailUrl).circleCrop()
                 .into(holder.binding.imgThumb)
         } else {
             holder.binding.imgThumb.setImageResource(android.R.drawable.ic_menu_gallery)
@@ -35,6 +35,11 @@ class PersonAdapter(
 
     companion object {
         val DIFF = object : DiffUtil.ItemCallback<Person>() {
+            override fun areItemsTheSame(oldItem: Person, newItem: Person) = oldItem.id == newItem.id
+            override fun areContentsTheSame(oldItem: Person, newItem: Person) = oldItem == newItem
+        }
+    }
+}        val DIFF = object : DiffUtil.ItemCallback<Person>() {
             override fun areItemsTheSame(oldItem: Person, newItem: Person) = oldItem.id == newItem.id
             override fun areContentsTheSame(oldItem: Person, newItem: Person) = oldItem == newItem
         }
