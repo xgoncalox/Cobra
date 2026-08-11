@@ -18,8 +18,6 @@ import com.google.mlkit.vision.face.Face
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import kotlinx.coroutines.launch
-import java.io.File
-import java.io.FileOutputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -29,7 +27,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var embedder: FaceEmbedder
     private lateinit var matcher: FaceMatcher
-    private lateinit var db: AppDatabase
+    private val repo = FirebaseRepository.getInstance()
 
     private var lastUnknownBitmap: Bitmap? = null
     private var isProcessing = false
@@ -53,15 +51,19 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        db = AppDatabase.getInstance(this)
         embedder = FaceEmbedder(this)
-        matcher = FaceMatcher(this)
+        matcher = FaceMatcher(repo)
         cameraExecutor = Executors.newSingleThreadExecutor()
 
-        lifecycleScope.launch { matcher.refreshCache() }
+        lifecycleScope.launch {
+            repo.ensureSignedIn()
+            matcher.refreshCache()
+        }
 
         binding.btnAdmin.setOnClickListener {
-            startActivity(Intent(this, AdminActivity::class.java))
+            AdminGate.promptForCode(this) {
+                startActivity(Intent(this, AdminActivity::class.java))
+            }
         }
 
         binding.btnAssignUnknown.setOnClickListener {
@@ -217,7 +219,7 @@ class MainActivity : AppCompatActivity() {
     private fun showAssignDialog() {
         val bitmap = lastUnknownBitmap ?: return
         lifecycleScope.launch {
-            val persons = db.personDao().getAllPersonsList()
+            val persons = repo.getAllPersons()
             val names = persons.map { it.name }.toMutableList()
             names.add(0, "+ New person")
 
@@ -228,7 +230,7 @@ class MainActivity : AppCompatActivity() {
                         promptNewPersonName(bitmap)
                     } else {
                         val chosen = persons[which - 1]
-                        saveFaceForPerson(chosen.id, bitmap)
+                        saveFaceForExistingPerson(chosen.id, bitmap)
                     }
                 }
                 .setNegativeButton("Cancel", null)
@@ -245,11 +247,15 @@ class MainActivity : AppCompatActivity() {
                 val name = input.text.toString().trim()
                 if (name.isNotEmpty()) {
                     lifecycleScope.launch {
-                        val imagePath = saveBitmapToDisk(bitmap, name)
-                        val personId = db.personDao().insertPerson(
-                            Person(name = name, thumbnailPath = imagePath)
-                        )
-                        saveFaceForPerson(personId, bitmap, imagePath)
+                        try {
+                            val embedding = embedder.getEmbedding(bitmap)
+                            repo.createPersonWithFace(name, bitmap, embedding)
+                            matcher.refreshCache()
+                            Toast.makeText(this@MainActivity, "Saved", Toast.LENGTH_SHORT).show()
+                            binding.btnAssignUnknown.visibility = android.view.View.GONE
+                        } catch (e: Exception) {
+                            Toast.makeText(this@MainActivity, "Upload failed: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
             }
@@ -257,10 +263,26 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun saveFaceForPerson(personId: Long, bitmap: Bitmap, existingPath: String? = null) {
+    private fun saveFaceForExistingPerson(personId: String, bitmap: Bitmap) {
         lifecycleScope.launch {
-            val path = existingPath ?: saveBitmapToDisk(bitmap, "person_$personId")
-            val embedding = embedder.getEmbedding(bitmap)
+            try {
+                val embedding = embedder.getEmbedding(bitmap)
+                repo.addFaceToPerson(personId, bitmap, embedding)
+                matcher.refreshCache()
+                Toast.makeText(this@MainActivity, "Saved", Toast.LENGTH_SHORT).show()
+                binding.btnAssignUnknown.visibility = android.view.View.GONE
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "Upload failed: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        cameraExecutor.shutdown()
+        embedder.close()
+    }
+}        val embedding = embedder.getEmbedding(bitmap)
             db.personDao().insertEmbedding(
                 FaceEmbeddingEntity(personId = personId, vector = embedding, imagePath = path)
             )
