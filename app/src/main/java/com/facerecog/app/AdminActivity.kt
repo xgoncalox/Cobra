@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 class AdminActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityAdminBinding
-    private lateinit var db: AppDatabase
+    private val repo = FirebaseRepository.getInstance()
     private lateinit var adapter: PersonAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -19,8 +19,6 @@ class AdminActivity : AppCompatActivity() {
         binding = ActivityAdminBinding.inflate(layoutInflater)
         setContentView(binding.root)
         supportActionBar?.title = "Admin — People"
-
-        db = AppDatabase.getInstance(this)
 
         adapter = PersonAdapter(
             onClick = { person ->
@@ -31,10 +29,32 @@ class AdminActivity : AppCompatActivity() {
             },
             onDelete = { person ->
                 lifecycleScope.launch {
-                    db.personDao().deleteEmbeddingsForPerson(person.id)
-                    db.personDao().deletePerson(person)
+                    repo.deletePerson(person.id)
+                    loadPersons()
                 }
             }
+        )
+
+        binding.recyclerView.layoutManager = GridLayoutManager(this, 2)
+        binding.recyclerView.adapter = adapter
+
+        loadPersons()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        loadPersons()
+    }
+
+    private fun loadPersons() {
+        lifecycleScope.launch {
+            val persons = repo.getAllPersons().sortedBy { it.name.lowercase() }
+            adapter.submitList(persons)
+            binding.emptyView.visibility =
+                if (persons.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
+        }
+    }
+}            }
         )
 
         binding.recyclerView.layoutManager = GridLayoutManager(this, 2)
