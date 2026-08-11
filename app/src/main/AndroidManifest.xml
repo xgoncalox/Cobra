@@ -40,8 +40,4 @@
 
     </application>
 
-</manifest>            android:screenOrientation="portrait" />
-
-    </application>
-
 </manifest>
