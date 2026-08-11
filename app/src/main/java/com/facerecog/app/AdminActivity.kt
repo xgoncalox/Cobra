@@ -1,1 +1,51 @@
+package com.facerecog.app
 
+import android.content.Intent
+import android.os.Bundle
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.GridLayoutManager
+import com.facerecog.app.databinding.ActivityAdminBinding
+import kotlinx.coroutines.launch
+
+class AdminActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityAdminBinding
+    private lateinit var db: AppDatabase
+    private lateinit var adapter: PersonAdapter
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityAdminBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+        supportActionBar?.title = "Admin — People"
+
+        db = AppDatabase.getInstance(this)
+
+        adapter = PersonAdapter(
+            onClick = { person ->
+                val intent = Intent(this, PersonDetailActivity::class.java)
+                intent.putExtra("personId", person.id)
+                intent.putExtra("personName", person.name)
+                startActivity(intent)
+            },
+            onDelete = { person ->
+                lifecycleScope.launch {
+                    db.personDao().deleteEmbeddingsForPerson(person.id)
+                    db.personDao().deletePerson(person)
+                }
+            }
+        )
+
+        binding.recyclerView.layoutManager = GridLayoutManager(this, 2)
+        binding.recyclerView.adapter = adapter
+
+        lifecycleScope.launch {
+            db.personDao().getAllPersons().collect { persons ->
+                adapter.submitList(persons)
+                binding.emptyView.visibility =
+                    if (persons.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
+            }
+        }
+    }
+}
