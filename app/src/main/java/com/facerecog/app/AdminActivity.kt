@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 class AdminActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityAdminBinding
-    private val repo = FirebaseRepository.getInstance()
+    private val repo = SupabaseRepository.getInstance()
     private lateinit var adapter: PersonAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,20 +52,6 @@ class AdminActivity : AppCompatActivity() {
             adapter.submitList(persons)
             binding.emptyView.visibility =
                 if (persons.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
-        }
-    }
-}            }
-        )
-
-        binding.recyclerView.layoutManager = GridLayoutManager(this, 2)
-        binding.recyclerView.adapter = adapter
-
-        lifecycleScope.launch {
-            db.personDao().getAllPersons().collect { persons ->
-                adapter.submitList(persons)
-                binding.emptyView.visibility =
-                    if (persons.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
-            }
         }
     }
 }
