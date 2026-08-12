@@ -11,13 +11,10 @@ import android.view.View
 import android.view.animation.LinearInterpolator
 import androidx.core.content.ContextCompat
 
-data class OverlayFace(val box: RectF, val label: String, val isKnown: Boolean)
+enum class FaceStatus { RECOGNIZED, UNKNOWN, VERIFYING }
 
-/**
- * Draws face boxes with a live "scanning" pulse and a short pop/flash the moment
- * a face's label changes (e.g. Unknown -> a real name), so recognition feels
- * responsive rather than a flat label swap.
- */
+data class OverlayFace(val box: RectF, val label: String, val status: FaceStatus)
+
 class FaceOverlayView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : View(context, attrs) {
@@ -30,6 +27,8 @@ class FaceOverlayView @JvmOverloads constructor(
     private val knownGlow = ContextCompat.getColor(context, R.color.recognized_glow)
     private val unknownColor = ContextCompat.getColor(context, R.color.unknown)
     private val unknownGlow = ContextCompat.getColor(context, R.color.unknown_glow)
+    private val verifyingColor = ContextCompat.getColor(context, R.color.scan_hint)
+    private val verifyingGlow = ContextCompat.getColor(context, R.color.scan_hint)
 
     private val boxPaint = Paint().apply {
         style = Paint.Style.STROKE
@@ -51,7 +50,6 @@ class FaceOverlayView @JvmOverloads constructor(
         isAntiAlias = true
     }
 
-    // Continuous slow pulse used on every box's outer glow (a "live scanning" feel).
     private var pulsePhase = 0f
     private val pulseAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
         duration = 1400
@@ -75,7 +73,6 @@ class FaceOverlayView @JvmOverloads constructor(
     }
 
     fun setFaces(newFaces: List<OverlayFace>) {
-        // Detect label changes per index to trigger a "pop" flash on that box.
         newFaces.forEachIndexed { index, face ->
             val prev = previousLabels[index]
             if (prev != null && prev != face.label) {
@@ -101,12 +98,13 @@ class FaceOverlayView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         faces.forEachIndexed { index, face ->
-            val isKnown = face.isKnown
-            val color = if (isKnown) knownColor else unknownColor
-            val glow = if (isKnown) knownGlow else unknownGlow
+            val (color, glow) = when (face.status) {
+                FaceStatus.RECOGNIZED -> knownColor to knownGlow
+                FaceStatus.UNKNOWN -> unknownColor to unknownGlow
+                FaceStatus.VERIFYING -> verifyingColor to verifyingGlow
+            }
             val pop = popProgress[index] ?: 0f
 
-            // Outer pulsing glow ring - breathes in/out continuously.
             val pulseAlpha = (60 + 60 * kotlin.math.sin(pulsePhase * Math.PI * 2)).toInt().coerceIn(20, 140)
             glowPaint.color = glow
             glowPaint.alpha = pulseAlpha
@@ -117,12 +115,10 @@ class FaceOverlayView @JvmOverloads constructor(
                 20f, 20f, glowPaint
             )
 
-            // Main box.
             boxPaint.color = color
             boxPaint.strokeWidth = 6f + pop * 4f
             canvas.drawRoundRect(face.box, 18f, 18f, boxPaint)
 
-            // Label pill.
             textBgPaint.color = color
             val textWidth = textPaint.measureText(face.label)
             val pillTop = face.box.top - 58f
