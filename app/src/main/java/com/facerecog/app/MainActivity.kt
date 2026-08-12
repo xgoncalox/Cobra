@@ -25,6 +25,15 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
+/** Per-tracked-face state: recognition result plus blink-based liveness. */
+private class FaceState {
+    var label: String = "Verifying…"
+    var status: FaceStatus = FaceStatus.VERIFYING
+    var eyesClosedSeen: Boolean = false
+    var blinkConfirmed: Boolean = false
+    var lastSeenMs: Long = System.currentTimeMillis()
+}
+
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
@@ -39,11 +48,14 @@ class MainActivity : AppCompatActivity() {
     private var cameraProvider: ProcessCameraProvider? = null
     private var lastRecognitionTime = 0L
     private val recognitionIntervalMs = 350L
-    private var cachedLabels: MutableList<Pair<String, Boolean>> = mutableListOf()
+
+    private val faceStates = HashMap<Int, FaceState>()
 
     private val detector = FaceDetection.getClient(
         FaceDetectorOptions.Builder()
             .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+            .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
+            .enableTracking()
             .build()
     )
 
@@ -83,7 +95,7 @@ class MainActivity : AppCompatActivity() {
             binding.overlay.setFaces(emptyList())
             binding.tvStatus.text = "Scanning…"
             hideAssignButton()
-            cachedLabels = mutableListOf()
+            faceStates.clear()
             lastRecognitionTime = 0L
             bindCameraUseCases()
         }
@@ -156,6 +168,36 @@ class MainActivity : AppCompatActivity() {
             .addOnFailureListener { imageProxy.close(); isProcessing = false }
     }
 
+    private fun updateLiveness(faces: List<Face>): Boolean {
+        val now = System.currentTimeMillis()
+        var anyTrackingUnsupported = false
+
+        for (face in faces) {
+            val id = face.trackingId
+            if (id == null) {
+                anyTrackingUnsupported = true
+                continue
+            }
+            val state = faceStates.getOrPut(id) { FaceState() }
+            state.lastSeenMs = now
+
+            val leftOpen = face.leftEyeOpenProbability ?: 1f
+            val rightOpen = face.rightEyeOpenProbability ?: 1f
+            val avgOpen = (leftOpen + rightOpen) / 2f
+
+            if (avgOpen < 0.35f) {
+                state.eyesClosedSeen = true
+            } else if (avgOpen > 0.65f && state.eyesClosedSeen && !state.blinkConfirmed) {
+                state.blinkConfirmed = true
+            }
+        }
+
+        val staleIds = faceStates.entries.filter { now - it.value.lastSeenMs > 4000 }.map { it.key }
+        staleIds.forEach { faceStates.remove(it) }
+
+        return anyTrackingUnsupported
+    }
+
     private fun handleFaces(faces: List<Face>, imageProxy: ImageProxy, rotation: Int) {
         if (faces.isEmpty()) {
             runOnUiThread {
@@ -163,19 +205,16 @@ class MainActivity : AppCompatActivity() {
                 hideAssignButton()
                 binding.tvStatus.text = "Scanning…"
             }
-            cachedLabels = mutableListOf()
             imageProxy.close()
             isProcessing = false
             return
         }
 
+        val trackingUnsupported = updateLiveness(faces)
         val now = System.currentTimeMillis()
-        val dueForRecognition = now - lastRecognitionTime >= recognitionIntervalMs ||
-            cachedLabels.size != faces.size
+        val dueForRecognition = now - lastRecognitionTime >= recognitionIntervalMs
 
         if (!dueForRecognition) {
-            // Cheap path: reuse last recognition results, just move the boxes to the
-            // detector's latest positions. No bitmap conversion, no model inference.
             val previewW = binding.overlay.width.toFloat()
             val previewH = binding.overlay.height.toFloat()
             val imgW = imageProxy.width.toFloat()
@@ -183,14 +222,14 @@ class MainActivity : AppCompatActivity() {
             val scaleX = previewW / imgW
             val scaleY = previewH / imgH
 
-            val overlays = faces.mapIndexed { index, face ->
+            val overlays = faces.map { face ->
                 val box = face.boundingBox
                 val scaledBox = RectF(
                     box.left * scaleX, box.top * scaleY,
                     box.right * scaleX, box.bottom * scaleY
                 )
-                val (label, isKnown) = cachedLabels.getOrElse(index) { "..." to false }
-                OverlayFace(scaledBox, label, isKnown)
+                val state = face.trackingId?.let { faceStates[it] }
+                OverlayFace(scaledBox, state?.label ?: "Verifying…", state?.status ?: FaceStatus.VERIFYING)
             }
             runOnUiThread { binding.overlay.setFaces(overlays) }
             imageProxy.close()
@@ -200,42 +239,51 @@ class MainActivity : AppCompatActivity() {
 
         val fullBitmap = imageProxyToBitmap(imageProxy, rotation)
         val overlays = mutableListOf<OverlayFace>()
-        val newLabels = mutableListOf<Pair<String, Boolean>>()
         var foundUnknown: Bitmap? = null
 
         for (face in faces) {
+            val id = face.trackingId
+            val state = id?.let { faceStates.getOrPut(it) { FaceState() } }
+            val isLive = trackingUnsupported || state?.blinkConfirmed == true
+
             val box = face.boundingBox
-            val faceBitmap = cropSafely(fullBitmap, box)
-            var label = "..."
-            var isKnown = false
-            if (faceBitmap != null) {
-                val embedding = embedder.getEmbedding(faceBitmap)
-                val result = matcher.match(embedding)
-                label = if (result.personId != null) result.personName else "Unknown"
-                isKnown = result.personId != null
-                if (!isKnown) foundUnknown = faceBitmap
+            if (isLive) {
+                val faceBitmap = cropSafely(fullBitmap, box)
+                if (faceBitmap != null) {
+                    val embedding = embedder.getEmbedding(faceBitmap)
+                    val result = matcher.match(embedding)
+                    val label = if (result.personId != null) result.personName else "Unknown"
+                    val status = if (result.personId != null) FaceStatus.RECOGNIZED else FaceStatus.UNKNOWN
+                    state?.label = label
+                    state?.status = status
+                    if (result.personId == null) foundUnknown = faceBitmap
+                }
+            } else {
+                state?.label = "Verifying liveness… blink"
+                state?.status = FaceStatus.VERIFYING
             }
-            newLabels.add(label to isKnown)
+
             val scaleX = binding.overlay.width.toFloat() / fullBitmap.width
             val scaleY = binding.overlay.height.toFloat() / fullBitmap.height
             val scaledBox = RectF(
                 box.left * scaleX, box.top * scaleY,
                 box.right * scaleX, box.bottom * scaleY
             )
-            overlays.add(OverlayFace(scaledBox, label, isKnown))
+            overlays.add(OverlayFace(scaledBox, state?.label ?: "Verifying…", state?.status ?: FaceStatus.VERIFYING))
         }
 
-        cachedLabels = newLabels
         lastRecognitionTime = now
         lastUnknownBitmap = foundUnknown
 
         runOnUiThread {
             binding.overlay.setFaces(overlays)
-            val knownCount = overlays.count { it.isKnown }
+            val knownCount = overlays.count { it.status == FaceStatus.RECOGNIZED }
+            val verifyingCount = overlays.count { it.status == FaceStatus.VERIFYING }
             binding.tvStatus.text = when {
+                verifyingCount > 0 && knownCount == 0 && foundUnknown == null -> "Verifying liveness… please blink"
                 foundUnknown != null && knownCount > 0 -> "$knownCount recognized · unknown face detected"
                 foundUnknown != null -> "Unknown face detected"
-                knownCount == 1 -> overlays.first { it.isKnown }.label
+                knownCount == 1 -> overlays.first { it.status == FaceStatus.RECOGNIZED }.label
                 knownCount > 1 -> "$knownCount people recognized"
                 else -> "Scanning…"
             }
