@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="md_primary">#8BD98F</color>
+    <color name="md_on_primary">#00390A</color>
+    <color name="md_primary_container">#00530F</color>
+    <color name="md_on_primary_container">#A6F5AA</color>
+
+    <color name="md_secondary">#BACCB2</color>
+    <color name="md_on_secondary">#253422</color>
+    <color name="md_secondary_container">#3B4B37</color>
+    <color name="md_on_secondary_container">#D6E8CF</color>
+
+    <color name="md_error">#FFB4AB</color>
+    <color name="md_on_error">#690005</color>
+    <color name="md_error_container">#93000A</color>
+    <color name="md_on_error_container">#FFDAD6</color>
+
+    <color name="md_background">#12140F</color>
+    <color name="md_on_background">#E2E3DD</color>
+    <color name="md_surface">#12140F</color>
+    <color name="md_on_surface">#E2E3DD</color>
+    <color name="md_surface_variant">#424940</color>
+    <color name="md_on_surface_variant">#C2C9BC</color>
+    <color name="md_outline">#8C9388</color>
+    <color name="md_surface_container">#1E211B</color>
+    <color name="md_surface_container_high">#282B24</color>
+
+    <color name="recognized">#8BD98F</color>
+    <color name="recognized_glow">#B7F5BA</color>
+    <color name="unknown">#FF8A80</color>
+    <color name="unknown_glow">#FFB4AB</color>
+    <color name="scan_hint">#FFD54F</color>
+</resources>
