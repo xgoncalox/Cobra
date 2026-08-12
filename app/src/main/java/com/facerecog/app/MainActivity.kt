@@ -35,6 +35,8 @@ class MainActivity : AppCompatActivity() {
 
     private var lastUnknownBitmap: Bitmap? = null
     private var isProcessing = false
+    private var currentCameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+    private var cameraProvider: ProcessCameraProvider? = null
 
     private val detector = FaceDetection.getClient(
         FaceDetectorOptions.Builder()
@@ -69,6 +71,18 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        binding.btnSwitchCamera.setOnClickListener {
+            currentCameraSelector = if (currentCameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA) {
+                CameraSelector.DEFAULT_BACK_CAMERA
+            } else {
+                CameraSelector.DEFAULT_FRONT_CAMERA
+            }
+            binding.overlay.setFaces(emptyList())
+            binding.tvStatus.text = "Scanning…"
+            hideAssignButton()
+            bindCameraUseCases()
+        }
+
         binding.btnAssignUnknown.setOnClickListener {
             showAssignDialog()
         }
@@ -93,28 +107,31 @@ class MainActivity : AppCompatActivity() {
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
-            val cameraProvider = cameraProviderFuture.get()
-
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(binding.previewView.surfaceProvider)
-            }
-
-            val analyzer = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-                .also {
-                    it.setAnalyzer(cameraExecutor) { imageProxy -> analyzeFrame(imageProxy) }
-                }
-
-            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
-
-            try {
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(this, cameraSelector, preview, analyzer)
-            } catch (e: Exception) {
-                Toast.makeText(this, "Camera bind failed: ${e.message}", Toast.LENGTH_LONG).show()
-            }
+            cameraProvider = cameraProviderFuture.get()
+            bindCameraUseCases()
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun bindCameraUseCases() {
+        val provider = cameraProvider ?: return
+
+        val preview = Preview.Builder().build().also {
+            it.setSurfaceProvider(binding.previewView.surfaceProvider)
+        }
+
+        val analyzer = ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .build()
+            .also {
+                it.setAnalyzer(cameraExecutor) { imageProxy -> analyzeFrame(imageProxy) }
+            }
+
+        try {
+            provider.unbindAll()
+            provider.bindToLifecycle(this, currentCameraSelector, preview, analyzer)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Camera bind failed: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     @androidx.camera.core.ExperimentalGetImage
