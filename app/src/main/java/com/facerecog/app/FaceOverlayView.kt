@@ -1,5 +1,6 @@
 package com.facerecog.app
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
@@ -7,53 +8,130 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
+import android.view.animation.LinearInterpolator
+import androidx.core.content.ContextCompat
 
 data class OverlayFace(val box: RectF, val label: String, val isKnown: Boolean)
 
+/**
+ * Draws face boxes with a live "scanning" pulse and a short pop/flash the moment
+ * a face's label changes (e.g. Unknown -> a real name), so recognition feels
+ * responsive rather than a flat label swap.
+ */
 class FaceOverlayView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
     private var faces: List<OverlayFace> = emptyList()
+    private val previousLabels = HashMap<Int, String>()
+    private val popProgress = HashMap<Int, Float>()
 
-    private val knownPaint = Paint().apply {
-        color = Color.parseColor("#4CAF50")
+    private val knownColor = ContextCompat.getColor(context, R.color.recognized)
+    private val knownGlow = ContextCompat.getColor(context, R.color.recognized_glow)
+    private val unknownColor = ContextCompat.getColor(context, R.color.unknown)
+    private val unknownGlow = ContextCompat.getColor(context, R.color.unknown_glow)
+
+    private val boxPaint = Paint().apply {
         style = Paint.Style.STROKE
         strokeWidth = 6f
+        isAntiAlias = true
     }
-    private val unknownPaint = Paint().apply {
-        color = Color.parseColor("#F44336")
+    private val glowPaint = Paint().apply {
         style = Paint.Style.STROKE
-        strokeWidth = 6f
+        isAntiAlias = true
     }
     private val textPaint = Paint().apply {
         color = Color.WHITE
-        textSize = 42f
+        textSize = 44f
         isAntiAlias = true
+        isFakeBoldText = true
     }
     private val textBgPaint = Paint().apply {
         style = Paint.Style.FILL
+        isAntiAlias = true
+    }
+
+    // Continuous slow pulse used on every box's outer glow (a "live scanning" feel).
+    private var pulsePhase = 0f
+    private val pulseAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+        duration = 1400
+        repeatCount = ValueAnimator.INFINITE
+        repeatMode = ValueAnimator.RESTART
+        interpolator = LinearInterpolator()
+        addUpdateListener {
+            pulsePhase = it.animatedValue as Float
+            invalidate()
+        }
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        pulseAnimator.start()
+    }
+
+    override fun onDetachedFromWindow() {
+        pulseAnimator.cancel()
+        super.onDetachedFromWindow()
     }
 
     fun setFaces(newFaces: List<OverlayFace>) {
+        // Detect label changes per index to trigger a "pop" flash on that box.
+        newFaces.forEachIndexed { index, face ->
+            val prev = previousLabels[index]
+            if (prev != null && prev != face.label) {
+                animatePop(index)
+            }
+            previousLabels[index] = face.label
+        }
         faces = newFaces
         invalidate()
     }
 
+    private fun animatePop(index: Int) {
+        val anim = ValueAnimator.ofFloat(1f, 0f).apply {
+            duration = 500
+            addUpdateListener {
+                popProgress[index] = it.animatedValue as Float
+                invalidate()
+            }
+        }
+        anim.start()
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        for (face in faces) {
-            val paint = if (face.isKnown) knownPaint else unknownPaint
-            canvas.drawRoundRect(face.box, 16f, 16f, paint)
+        faces.forEachIndexed { index, face ->
+            val isKnown = face.isKnown
+            val color = if (isKnown) knownColor else unknownColor
+            val glow = if (isKnown) knownGlow else unknownGlow
+            val pop = popProgress[index] ?: 0f
 
-            textBgPaint.color = if (face.isKnown) Color.parseColor("#4CAF50") else Color.parseColor("#F44336")
-            val textWidth = textPaint.measureText(face.label)
-            canvas.drawRect(
-                face.box.left, face.box.top - 50f,
-                face.box.left + textWidth + 20f, face.box.top,
-                textBgPaint
+            // Outer pulsing glow ring - breathes in/out continuously.
+            val pulseAlpha = (60 + 60 * kotlin.math.sin(pulsePhase * Math.PI * 2)).toInt().coerceIn(20, 140)
+            glowPaint.color = glow
+            glowPaint.alpha = pulseAlpha
+            glowPaint.strokeWidth = 14f + pop * 18f
+            val inset = -6f - pop * 10f
+            canvas.drawRoundRect(
+                RectF(face.box.left + inset, face.box.top + inset, face.box.right - inset, face.box.bottom - inset),
+                20f, 20f, glowPaint
             )
-            canvas.drawText(face.label, face.box.left + 10f, face.box.top - 14f, textPaint)
+
+            // Main box.
+            boxPaint.color = color
+            boxPaint.strokeWidth = 6f + pop * 4f
+            canvas.drawRoundRect(face.box, 18f, 18f, boxPaint)
+
+            // Label pill.
+            textBgPaint.color = color
+            val textWidth = textPaint.measureText(face.label)
+            val pillTop = face.box.top - 58f
+            canvas.drawRoundRect(
+                face.box.left, pillTop,
+                face.box.left + textWidth + 32f, face.box.top - 6f,
+                14f, 14f, textBgPaint
+            )
+            canvas.drawText(face.label, face.box.left + 16f, face.box.top - 22f, textPaint)
         }
     }
 }
