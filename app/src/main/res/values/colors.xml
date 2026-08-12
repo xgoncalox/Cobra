@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Seed: warm green, evokes "recognized/verified" -->
+    <color name="md_primary">#2E7D32</color>
+    <color name="md_on_primary">#FFFFFF</color>
+    <color name="md_primary_container">#A6F5AA</color>
+    <color name="md_on_primary_container">#002106</color>
+
+    <color name="md_secondary">#53634F</color>
+    <color name="md_on_secondary">#FFFFFF</color>
+    <color name="md_secondary_container">#D6E8CF</color>
+    <color name="md_on_secondary_container">#111F0F</color>
+
+    <color name="md_error">#BA1A1A</color>
+    <color name="md_on_error">#FFFFFF</color>
+    <color name="md_error_container">#FFDAD6</color>
+    <color name="md_on_error_container">#410002</color>
+
+    <color name="md_background">#FBFDF7</color>
+    <color name="md_on_background">#1A1C19</color>
+    <color name="md_surface">#FBFDF7</color>
+    <color name="md_on_surface">#1A1C19</color>
+    <color name="md_surface_variant">#DEE5D8</color>
+    <color name="md_on_surface_variant">#424940</color>
+    <color name="md_outline">#72796F</color>
+    <color name="md_surface_container">#EEF1E9</color>
+    <color name="md_surface_container_high">#E8ECE2</color>
+
+    <!-- Recognition states -->
+    <color name="recognized">#2E7D32</color>
+    <color name="recognized_glow">#6ED97C</color>
+    <color name="unknown">#D32F2F</color>
+    <color name="unknown_glow">#FF8A80</color>
+    <color name="scan_hint">#FFC107</color>
+</resources>
