@@ -2,7 +2,6 @@ package com.facerecog.app
 
 import android.os.Bundle
 import android.widget.EditText
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -10,6 +9,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import com.bumptech.glide.Glide
 import com.facerecog.app.databinding.ActivityPersonDetailBinding
 import com.facerecog.app.databinding.ItemFaceThumbBinding
+import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.launch
 
 class PersonDetailActivity : AppCompatActivity() {
@@ -23,6 +23,8 @@ class PersonDetailActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityPersonDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        setSupportActionBar(binding.toolbar)
+        binding.toolbar.setNavigationOnClickListener { finish() }
 
         personId = intent.getStringExtra("personId") ?: ""
         val personName = intent.getStringExtra("personName") ?: "Person"
@@ -85,7 +87,7 @@ class PersonDetailActivity : AppCompatActivity() {
             .setPositiveButton("Delete") { _, _ ->
                 lifecycleScope.launch {
                     repo.deletePerson(personId)
-                    Toast.makeText(this@PersonDetailActivity, "Deleted", Toast.LENGTH_SHORT).show()
+                    Snackbar.make(binding.root, "Deleted", Snackbar.LENGTH_SHORT).show()
                     finish()
                 }
             }
