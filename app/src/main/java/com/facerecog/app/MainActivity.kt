@@ -1,13 +1,17 @@
 package com.facerecog.app
 
 import android.Manifest
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.*
 import android.os.Bundle
+import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.snackbar.Snackbar
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
@@ -133,7 +137,8 @@ class MainActivity : AppCompatActivity() {
         if (faces.isEmpty()) {
             runOnUiThread {
                 binding.overlay.setFaces(emptyList())
-                binding.btnAssignUnknown.visibility = android.view.View.GONE
+                hideAssignButton()
+                binding.tvStatus.text = "Scanning…"
             }
             imageProxy.close()
             isProcessing = false
@@ -169,12 +174,40 @@ class MainActivity : AppCompatActivity() {
 
         runOnUiThread {
             binding.overlay.setFaces(overlays)
-            binding.btnAssignUnknown.visibility =
-                if (foundUnknown != null) android.view.View.VISIBLE else android.view.View.GONE
+            val knownCount = overlays.count { it.isKnown }
+            binding.tvStatus.text = when {
+                foundUnknown != null && knownCount > 0 -> "$knownCount recognized · unknown face detected"
+                foundUnknown != null -> "Unknown face detected"
+                knownCount == 1 -> overlays.first { it.isKnown }.label
+                knownCount > 1 -> "$knownCount people recognized"
+                else -> "Scanning…"
+            }
+            if (foundUnknown != null) showAssignButton() else hideAssignButton()
         }
 
         imageProxy.close()
         isProcessing = false
+    }
+
+    private fun showAssignButton() {
+        val btn = binding.btnAssignUnknown
+        if (btn.visibility == View.VISIBLE && btn.alpha > 0.9f) return
+        btn.visibility = View.VISIBLE
+        btn.alpha = 0f
+        btn.scaleX = 0.85f
+        btn.scaleY = 0.85f
+        btn.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220).start()
+    }
+
+    private fun hideAssignButton() {
+        val btn = binding.btnAssignUnknown
+        if (btn.visibility != View.VISIBLE) return
+        btn.animate().alpha(0f).scaleX(0.85f).scaleY(0.85f).setDuration(180)
+            .setListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    btn.visibility = View.GONE
+                }
+            }).start()
     }
 
     private fun cropSafely(bitmap: Bitmap, box: Rect): Bitmap? {
@@ -250,8 +283,8 @@ class MainActivity : AppCompatActivity() {
                             val embedding = embedder.getEmbedding(bitmap)
                             repo.createPersonWithFace(name, bitmap, embedding)
                             matcher.refreshCache()
-                            Toast.makeText(this@MainActivity, "Saved", Toast.LENGTH_SHORT).show()
-                            binding.btnAssignUnknown.visibility = android.view.View.GONE
+                            Snackbar.make(binding.root, "Saved ✓", Snackbar.LENGTH_SHORT).show()
+                            hideAssignButton()
                         } catch (e: Exception) {
                             Toast.makeText(this@MainActivity, "Upload failed: ${e.message}", Toast.LENGTH_LONG).show()
                         }
@@ -268,8 +301,8 @@ class MainActivity : AppCompatActivity() {
                 val embedding = embedder.getEmbedding(bitmap)
                 repo.addFaceToPerson(personId, bitmap, embedding)
                 matcher.refreshCache()
-                Toast.makeText(this@MainActivity, "Saved", Toast.LENGTH_SHORT).show()
-                binding.btnAssignUnknown.visibility = android.view.View.GONE
+                Snackbar.make(binding.root, "Saved ✓", Snackbar.LENGTH_SHORT).show()
+                hideAssignButton()
             } catch (e: Exception) {
                 Toast.makeText(this@MainActivity, "Upload failed: ${e.message}", Toast.LENGTH_LONG).show()
             }
