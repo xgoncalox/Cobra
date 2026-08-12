@@ -37,6 +37,9 @@ class MainActivity : AppCompatActivity() {
     private var isProcessing = false
     private var currentCameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
     private var cameraProvider: ProcessCameraProvider? = null
+    private var lastRecognitionTime = 0L
+    private val recognitionIntervalMs = 350L
+    private var cachedLabels: MutableList<Pair<String, Boolean>> = mutableListOf()
 
     private val detector = FaceDetection.getClient(
         FaceDetectorOptions.Builder()
@@ -80,6 +83,8 @@ class MainActivity : AppCompatActivity() {
             binding.overlay.setFaces(emptyList())
             binding.tvStatus.text = "Scanning…"
             hideAssignButton()
+            cachedLabels = mutableListOf()
+            lastRecognitionTime = 0L
             bindCameraUseCases()
         }
 
@@ -121,6 +126,7 @@ class MainActivity : AppCompatActivity() {
 
         val analyzer = ImageAnalysis.Builder()
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .setTargetResolution(android.util.Size(640, 480))
             .build()
             .also {
                 it.setAnalyzer(cameraExecutor) { imageProxy -> analyzeFrame(imageProxy) }
@@ -157,6 +163,36 @@ class MainActivity : AppCompatActivity() {
                 hideAssignButton()
                 binding.tvStatus.text = "Scanning…"
             }
+            cachedLabels = mutableListOf()
+            imageProxy.close()
+            isProcessing = false
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        val dueForRecognition = now - lastRecognitionTime >= recognitionIntervalMs ||
+            cachedLabels.size != faces.size
+
+        if (!dueForRecognition) {
+            // Cheap path: reuse last recognition results, just move the boxes to the
+            // detector's latest positions. No bitmap conversion, no model inference.
+            val previewW = binding.overlay.width.toFloat()
+            val previewH = binding.overlay.height.toFloat()
+            val imgW = imageProxy.width.toFloat()
+            val imgH = imageProxy.height.toFloat()
+            val scaleX = previewW / imgW
+            val scaleY = previewH / imgH
+
+            val overlays = faces.mapIndexed { index, face ->
+                val box = face.boundingBox
+                val scaledBox = RectF(
+                    box.left * scaleX, box.top * scaleY,
+                    box.right * scaleX, box.bottom * scaleY
+                )
+                val (label, isKnown) = cachedLabels.getOrElse(index) { "..." to false }
+                OverlayFace(scaledBox, label, isKnown)
+            }
+            runOnUiThread { binding.overlay.setFaces(overlays) }
             imageProxy.close()
             isProcessing = false
             return
@@ -164,6 +200,7 @@ class MainActivity : AppCompatActivity() {
 
         val fullBitmap = imageProxyToBitmap(imageProxy, rotation)
         val overlays = mutableListOf<OverlayFace>()
+        val newLabels = mutableListOf<Pair<String, Boolean>>()
         var foundUnknown: Bitmap? = null
 
         for (face in faces) {
@@ -178,6 +215,7 @@ class MainActivity : AppCompatActivity() {
                 isKnown = result.personId != null
                 if (!isKnown) foundUnknown = faceBitmap
             }
+            newLabels.add(label to isKnown)
             val scaleX = binding.overlay.width.toFloat() / fullBitmap.width
             val scaleY = binding.overlay.height.toFloat() / fullBitmap.height
             val scaledBox = RectF(
@@ -187,6 +225,8 @@ class MainActivity : AppCompatActivity() {
             overlays.add(OverlayFace(scaledBox, label, isKnown))
         }
 
+        cachedLabels = newLabels
+        lastRecognitionTime = now
         lastUnknownBitmap = foundUnknown
 
         runOnUiThread {
@@ -254,7 +294,7 @@ class MainActivity : AppCompatActivity() {
 
         val yuvImage = YuvImage(nv21, ImageFormat.NV21, imageProxy.width, imageProxy.height, null)
         val out = java.io.ByteArrayOutputStream()
-        yuvImage.compressToJpeg(Rect(0, 0, imageProxy.width, imageProxy.height), 90, out)
+        yuvImage.compressToJpeg(Rect(0, 0, imageProxy.width, imageProxy.height), 70, out)
         val bytes = out.toByteArray()
         var bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
         if (rotation != 0) {
