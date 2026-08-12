@@ -18,6 +18,8 @@ class AdminActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityAdminBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        setSupportActionBar(binding.toolbar)
+        binding.toolbar.setNavigationOnClickListener { finish() }
         supportActionBar?.title = "Admin — People"
 
         adapter = PersonAdapter(
